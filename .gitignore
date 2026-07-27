@@ -1,0 +1,11 @@
+proj_env/
+__pycache__/
+*.pyc
+.env
+data/raw_pdfs/*
+data/metadata/*
+!data/raw_pdfs/.gitkeep
+!data/metadata/.gitkeep
+*.log
+.DS_Store
+qdrant_storage/
