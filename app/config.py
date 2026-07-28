@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     embedding_model: str = "BAAI/bge-m3"
     max_tokens_per_request: int = 2000
     max_tokens_per_session: int = 20000
+    confidence_tau_high: float = 0.7
+    confidence_tau_low: float = 0.4
+    arxiv_max_fetch: int = 3
 
     class Config:
         env_file = ".env"

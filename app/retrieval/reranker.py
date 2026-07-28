@@ -5,8 +5,11 @@ _device = "cuda" if torch.cuda.is_available() else "cpu"
 
 _reranker = FlagReranker("BAAI/bge-reranker-v2-m3", use_fp16=(_device == "cuda"))
 
-# --- Robust Patch for FlagEmbedding + Transformers >= 4.45 ---
-if hasattr(_reranker, "tokenizer") and not hasattr(_reranker.tokenizer, "prepare_for_model"):
+# --- Clean Patch for FlagEmbedding + Transformers (XLMRobertaTokenizer) ---
+if hasattr(_reranker, "tokenizer") and not hasattr(
+    _reranker.tokenizer, "prepare_for_model"
+):
+
     def _prepare_for_model_patch(
         self,
         ids,
@@ -24,9 +27,26 @@ if hasattr(_reranker, "tokenizer") and not hasattr(_reranker.tokenizer, "prepare
         return_special_tokens_mask=False,
         return_offsets_mapping=False,
         verbose=True,
-        **kwargs
+        **kwargs,
     ):
-        # Route to internal _encode_plus which handles single/pair token encoding in XLMRobertaTokenizer
+        # Handle pre-tokenized sequence list (IDs) passed by FlagEmbedding
+        if isinstance(ids, list):
+            # If pair_ids were provided, concatenate sequence pairs
+            if pair_ids is not None:
+                encoded_inputs = {"input_ids": ids + pair_ids}
+            else:
+                encoded_inputs = {"input_ids": ids}
+
+            return self.pad(
+                encoded_inputs,
+                padding=padding,
+                max_length=max_length,
+                pad_to_multiple_of=pad_to_multiple_of,
+                return_tensors=return_tensors,
+                verbose=verbose,
+            )
+
+        # Fallback for raw text strings
         return self._encode_plus(
             ids,
             second_ids=pair_ids,
@@ -43,10 +63,10 @@ if hasattr(_reranker, "tokenizer") and not hasattr(_reranker.tokenizer, "prepare
             return_special_tokens_mask=return_special_tokens_mask,
             return_offsets_mapping=return_offsets_mapping,
             verbose=verbose,
-            **kwargs
+            **kwargs,
         )
 
-    # Attach the patched method to the tokenizer instance dynamically
+    # Attach patched method to the tokenizer instance
     _reranker.tokenizer.prepare_for_model = _prepare_for_model_patch.__get__(
         _reranker.tokenizer, type(_reranker.tokenizer)
     )
@@ -55,7 +75,10 @@ if hasattr(_reranker, "tokenizer") and not hasattr(_reranker.tokenizer, "prepare
 
 def rerank(query: str, candidates: list[dict], top_k: int = 5) -> list[dict]:
     """candidates: list of dicts with a 'text' key (from Qdrant hybrid_search payloads).
-    Returns the same dicts, re-sorted, with a 'rerank_score' added, trimmed to top_k."""
+
+    Returns the same dicts, re-sorted, with a 'rerank_score' added, trimmed to
+    top_k.
+    """
     if not candidates:
         return []
 

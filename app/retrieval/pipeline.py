@@ -7,7 +7,7 @@ from app.guardrails.retrieval.source_trust import filter_trusted
 _grader = RelevanceGrader()
 
 
-def retrieve(query: str, topic_filter: str | None = None, rerank_top_k: int = 5) -> list[dict]:
+def retrieve(query: str, topic_filter: str | None = None, rerank_top_k: int = 5, extra_trusted_ids: set | None = None) -> list[dict]:
     emb = embed_batch([query])
     dense_vec = emb["dense_vecs"][0].tolist()
     indices, values = sparse_weights_to_qdrant_format(emb["sparse_weights"][0])
@@ -24,7 +24,7 @@ def retrieve(query: str, topic_filter: str | None = None, rerank_top_k: int = 5)
         for h in hits
     ]
 
-    candidates = filter_trusted(candidates)
+    candidates = filter_trusted(candidates, extra_trusted_ids)
     candidates = rerank(query, candidates, top_k=rerank_top_k)
     candidates = _grader.filter_relevant(query, candidates)
 

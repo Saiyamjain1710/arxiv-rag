@@ -1,4 +1,11 @@
 import torch
+# --- Compatibility shim for transformers v5+ and FlagEmbedding ---
+import transformers.utils.import_utils
+
+if not hasattr(transformers.utils.import_utils, "is_torch_fx_available"):
+    transformers.utils.import_utils.is_torch_fx_available = lambda: True
+# -----------------------------------------------------------------
+
 from FlagEmbedding import BGEM3FlagModel
 
 _device = "cuda" if torch.cuda.is_available() else "cpu"
