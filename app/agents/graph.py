@@ -56,18 +56,41 @@ def local_node(state: RAGState) -> RAGState:
 
 
 def arxiv_node(state: RAGState) -> RAGState:
-    new_ids = fetch_and_index(state["query"], max_results=settings.arxiv_max_fetch)
-    chunks = retrieve(state["query"], topic_filter=state.get("topic_filter"), extra_trusted_ids=set(new_ids))
+    try:
+        new_ids = fetch_and_index(state["query"], max_results=settings.arxiv_max_fetch)
+    except Exception as e:
+        print(f"  [arxiv_node] Warning: fetch_and_index failed ({e}). Falling back to local store.")
+        new_ids = []
+
+    # Even if fetch failed, attempt retrieval from the current local store
+    chunks = retrieve(
+        state["query"],
+        topic_filter=state.get("topic_filter"),
+        extra_trusted_ids=set(new_ids) if new_ids else None
+    )
     return {**state, "retrieved_chunks": chunks}
 
 
 def hybrid_node(state: RAGState) -> RAGState:
     local_chunks = retrieve(state["query"], topic_filter=state.get("topic_filter"))
-    new_ids = fetch_and_index(state["query"], max_results=settings.arxiv_max_fetch)
-    arxiv_chunks = retrieve(state["query"], topic_filter=state.get("topic_filter"), extra_trusted_ids=set(new_ids))
+    
+    try:
+        new_ids = fetch_and_index(state["query"], max_results=settings.arxiv_max_fetch)
+    except Exception as e:
+        print(f"  [hybrid_node] Warning: fetch_and_index failed ({e}). Proceeding with local results only.")
+        new_ids = []
 
+    arxiv_chunks = []
+    if new_ids:
+        arxiv_chunks = retrieve(
+            state["query"],
+            topic_filter=state.get("topic_filter"),
+            extra_trusted_ids=set(new_ids)
+        )
+
+    # Combine local and newly fetched chunks cleanly
     combined = {c["text"]: c for c in local_chunks + arxiv_chunks}
-    merged = sorted(combined.values(), key=lambda c: c["rerank_score"], reverse=True)
+    merged = sorted(combined.values(), key=lambda c: c.get("rerank_score", 0.0), reverse=True)
     return {**state, "retrieved_chunks": merged[:5]}
 
 
