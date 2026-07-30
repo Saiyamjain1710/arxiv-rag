@@ -1,4 +1,4 @@
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
@@ -13,8 +13,10 @@ class Settings(BaseSettings):
     confidence_tau_low: float = 0.4
     arxiv_max_fetch: int = 3
 
-    class Config:
-        env_file = ".env"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore"  # Ignores system env vars not defined in this class
+    )
 
 
 settings = Settings()

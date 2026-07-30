@@ -18,6 +18,7 @@ class RAGState(TypedDict):
     session_id: str
     topic_filter: Optional[str]
     confidence_score: float
+    query_embedding: dict  # NEW — reuse across nodes
     retrieved_chunks: list
 
 
@@ -27,15 +28,14 @@ def is_explicit_fetch_request(query: str) -> bool:
 
 
 def score_node(state: RAGState) -> RAGState:
-    """Confidence Scorer: a cheap top-1 hybrid search score, BEFORE reranking,
-    just to decide which branch to take."""
     emb = embed_batch([state["query"]])
     dense_vec = emb["dense_vecs"][0].tolist()
     indices, values = sparse_weights_to_qdrant_format(emb["sparse_weights"][0])
+
     hits = hybrid_search(dense_vec, indices, values, limit=1, topic_filter=state.get("topic_filter"))
     score = hits[0].score if hits else 0.0
     print(f"  [confidence_scorer] top score = {score:.4f}")
-    return {**state, "confidence_score": score}
+    return {**state, "confidence_score": score, "query_embedding": {"dense": dense_vec, "indices": indices, "values": values}}
 
 
 def route_decision(state: RAGState) -> str:
@@ -51,46 +51,23 @@ def route_decision(state: RAGState) -> str:
 
 
 def local_node(state: RAGState) -> RAGState:
-    chunks = retrieve(state["query"], topic_filter=state.get("topic_filter"))
+    chunks = retrieve(state["query"], topic_filter=state.get("topic_filter"), precomputed_embedding=state["query_embedding"])
     return {**state, "retrieved_chunks": chunks}
 
 
 def arxiv_node(state: RAGState) -> RAGState:
-    try:
-        new_ids = fetch_and_index(state["query"], max_results=settings.arxiv_max_fetch)
-    except Exception as e:
-        print(f"  [arxiv_node] Warning: fetch_and_index failed ({e}). Falling back to local store.")
-        new_ids = []
-
-    # Even if fetch failed, attempt retrieval from the current local store
-    chunks = retrieve(
-        state["query"],
-        topic_filter=state.get("topic_filter"),
-        extra_trusted_ids=set(new_ids) if new_ids else None
-    )
+    new_ids = fetch_and_index(state["query"], max_results=settings.arxiv_max_fetch)
+    chunks = retrieve(state["query"], topic_filter=None, extra_trusted_ids=set(new_ids))
     return {**state, "retrieved_chunks": chunks}
 
 
 def hybrid_node(state: RAGState) -> RAGState:
     local_chunks = retrieve(state["query"], topic_filter=state.get("topic_filter"))
-    
-    try:
-        new_ids = fetch_and_index(state["query"], max_results=settings.arxiv_max_fetch)
-    except Exception as e:
-        print(f"  [hybrid_node] Warning: fetch_and_index failed ({e}). Proceeding with local results only.")
-        new_ids = []
+    new_ids = fetch_and_index(state["query"], max_results=settings.arxiv_max_fetch)
+    arxiv_chunks = retrieve(state["query"], topic_filter=None, extra_trusted_ids=set(new_ids))
 
-    arxiv_chunks = []
-    if new_ids:
-        arxiv_chunks = retrieve(
-            state["query"],
-            topic_filter=state.get("topic_filter"),
-            extra_trusted_ids=set(new_ids)
-        )
-
-    # Combine local and newly fetched chunks cleanly
     combined = {c["text"]: c for c in local_chunks + arxiv_chunks}
-    merged = sorted(combined.values(), key=lambda c: c.get("rerank_score", 0.0), reverse=True)
+    merged = sorted(combined.values(), key=lambda c: c["rerank_score"], reverse=True)
     return {**state, "retrieved_chunks": merged[:5]}
 
 

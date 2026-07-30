@@ -7,10 +7,14 @@ from app.guardrails.retrieval.source_trust import filter_trusted
 _grader = RelevanceGrader()
 
 
-def retrieve(query: str, topic_filter: str | None = None, rerank_top_k: int = 5, extra_trusted_ids: set | None = None) -> list[dict]:
-    emb = embed_batch([query])
-    dense_vec = emb["dense_vecs"][0].tolist()
-    indices, values = sparse_weights_to_qdrant_format(emb["sparse_weights"][0])
+def retrieve(query: str, topic_filter: str | None = None, rerank_top_k: int = 5, extra_trusted_ids: set | None = None, precomputed_embedding: dict | None = None) -> list[dict]:
+    if precomputed_embedding:
+        dense_vec = precomputed_embedding["dense"]
+        indices, values = precomputed_embedding["indices"], precomputed_embedding["values"]
+    else:
+        emb = embed_batch([query])
+        dense_vec = emb["dense_vecs"][0].tolist()
+        indices, values = sparse_weights_to_qdrant_format(emb["sparse_weights"][0])
 
     hits = hybrid_search(dense_vec, indices, values, limit=15, topic_filter=topic_filter)
     candidates = [

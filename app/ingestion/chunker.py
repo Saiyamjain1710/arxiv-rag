@@ -15,7 +15,7 @@ MIN_TOKENS_SOFT_TARGET = 600
 
 
 def _token_len(text: str) -> int:
-    return len(_encoder.encode(text))
+    return len(_encoder.encode(text, disallowed_special=()))
 
 
 def chunk_markdown(markdown_text: str) -> list[dict]:

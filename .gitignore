@@ -4,6 +4,7 @@ __pycache__/
 .env
 data/raw_pdfs/*
 data/metadata/*
+data/indexed_chunk_ids.txt
 !data/raw_pdfs/.gitkeep
 !data/metadata/.gitkeep
 *.log
